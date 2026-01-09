@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Integrated Navigation & Route Monitoring System</title>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f4f6f8;
+}
+
+header {
+  background: #1f2937;
+  color: white;
+  padding: 14px;
+  font-size: 22px;
+}
+
+.container {
+  display: flex;
+  height: calc(100vh - 56px);
+}
+
+.sidebar {
+  width: 280px;
+  background: #ffffff;
+  padding: 14px;
+  border-right: 1px solid #ccc;
+  box-sizing: border-box;
+}
+
+.section {
+  margin-bottom: 16px;
+}
+
+.section h4 {
+  margin: 0 0 6px;
+  border-bottom: 1px solid #ddd;
+}
+
+button, input {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #e6f3f7;
+}
+
+canvas {
+  background: #eafcff;
+  border: 1px solid #999;
+}
+</style>
+</head>
+
+<body>
+
+<header>Navigation & Route Monitoring System</header>
+
+<div class="container">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+
+    <div class="section">
+      <h4>Simulation Controls</h4>
+      <button onclick="start()">Start</button>
+      <button onclick="pause()">Pause</button>
+
+      <label>Speed</label>
+      <input type="range" min="10" max="100" value="50" oninput="setSpeed(this.value)">
+      <div>Speed: <span id="speedVal">50</span></div>
+
+      <button onclick="setNorthUp()">North-Up</button>
+      <button onclick="setHeadingUp()">Heading-Up</button>
+    </div>
+
+    <div class="section">
+      <h4>Vessel Information</h4>
+      <div>Position: <span id="pos"></span></div>
+      <div>Speed: <span id="spd"></span></div>
+      <div>Heading: <span id="hdg"></span></div>
+      <div>Distance to WP: <span id="dist"></span></div>
+      <div>ETA: <span id="eta"></span></div>
+    </div>
+
+    <div class="section">
+      <h4>Mouse Controls</h4>
+      <div>• Left-click: Add waypoint</div>
+      <div>• Drag waypoint: Move</div>
+      <div>• Right-click: Remove waypoint</div>
+      <div>• Scroll: Zoom</div>
+      <div>• Drag empty space: Pan</div>
+    </div>
+
+  </div>
+
+  <!-- Canvas -->
+  <div class="main">
+    <canvas id="canvas" width="900" height="600"></canvas>
+  </div>
+
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+let running = false;
+let speed = 50;
+let scale = 1;
+let offset = { x: 0, y: 0 };
+let headingUp = false;
+
+let waypoints = [
+  { x: 200, y: 200 },
+  { x: 500, y: 250 },
+  { x: 650, y: 450 }
+];
+
+let vessel = {
+  x: waypoints[0].x,
+  y: waypoints[0].y,
+  heading: 0
+};
+
+let currentWP = 1;
+let draggingWP = null;
+let panning = false;
+let lastMouse = {};
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+
+  if (headingUp) ctx.rotate(-vessel.heading);
+
+  ctx.scale(scale, scale);
+  ctx.translate(offset.x - canvas.width / 2, offset.y - canvas.height / 2);
+
+  // Route
+  ctx.beginPath();
+  ctx.moveTo(waypoints[0].x, waypoints[0].y);
+  waypoints.forEach(wp => ctx.lineTo(wp.x, wp.y));
+  ctx.strokeStyle = "#2563eb";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Active route leg
+  if (currentWP < waypoints.length) {
+    ctx.beginPath();
+    ctx.moveTo(vessel.x, vessel.y);
+    ctx.lineTo(waypoints[currentWP].x, waypoints[currentWP].y);
+    ctx.strokeStyle = "red";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // Waypoints
+  waypoints.forEach((wp, i) => {
+    ctx.beginPath();
+    ctx.arc(wp.x, wp.y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = i === currentWP ? "green" : "darkgreen";
+    ctx.fill();
+  });
+
+  // Vessel
+  ctx.save();
+  ctx.translate(vessel.x, vessel.y);
+  ctx.rotate(vessel.heading);
+  ctx.beginPath();
+  ctx.moveTo(14, 0);
+  ctx.lineTo(-10, -7);
+  ctx.lineTo(-10, 7);
+  ctx.closePath();
+  ctx.fillStyle = "orange";
+  ctx.fill();
+  ctx.restore();
+
+  ctx.restore();
+
+  updateInfo();
+}
+
+function update() {
+  if (!running || currentWP >= waypoints.length) return;
+
+  const target = waypoints[currentWP];
+  const dx = target.x - vessel.x;
+  const dy = target.y - vessel.y;
+  const dist = Math.hypot(dx, dy);
+
+  if (dist < 5) {
+    currentWP++;
+    return;
+  }
+
+  vessel.heading = Math.atan2(dy, dx);
+  vessel.x += Math.cos(vessel.heading) * speed / 60;
+  vessel.y += Math.sin(vessel.heading) * speed / 60;
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function updateInfo() {
+  document.getElementById("pos").innerText =
+    `${vessel.x.toFixed(1)}, ${vessel.y.toFixed(1)}`;
+  document.getElementById("spd").innerText = speed;
+  document.getElementById("hdg").innerText =
+    (vessel.heading * 180 / Math.PI).toFixed(1);
+
+  if (currentWP < waypoints.length) {
+    const d = Math.hypot(
+      waypoints[currentWP].x - vessel.x,
+      waypoints[currentWP].y - vessel.y
+    );
+    document.getElementById("dist").innerText = d.toFixed(1);
+    document.getElementById("eta").innerText =
+      (d / speed).toFixed(2) + " s";
+  }
+}
+
+function start() { running = true; }
+function pause() { running = false; }
+function setSpeed(v) {
+  speed = Number(v);
+  document.getElementById("speedVal").innerText = v;
+}
+function setNorthUp() { headingUp = false; }
+function setHeadingUp() { headingUp = true; }
+
+// Mouse handling
+canvas.onmousedown = e => {
+  const x = e.offsetX / scale - offset.x;
+  const y = e.offsetY / scale - offset.y;
+
+  draggingWP = waypoints.find(
+    wp => Math.hypot(wp.x - x, wp.y - y) < 10
+  );
+
+  if (!draggingWP) {
+    panning = true;
+    lastMouse = { x: e.offsetX, y: e.offsetY };
+  }
+};
+
+canvas.onmousemove = e => {
+  if (draggingWP) {
+    draggingWP.x = e.offsetX / scale - offset.x;
+    draggingWP.y = e.offsetY / scale - offset.y;
+  } else if (panning) {
+    offset.x += (e.offsetX - lastMouse.x) / scale;
+    offset.y += (e.offsetY - lastMouse.y) / scale;
+    lastMouse = { x: e.offsetX, y: e.offsetY };
+  }
+};
+
+canvas.onmouseup = () => {
+  draggingWP = null;
+  panning = false;
+};
+
+// RIGHT-CLICK REMOVE WAYPOINT (FIXED)
+canvas.oncontextmenu = e => {
+  e.preventDefault();
+
+  const x = e.offsetX / scale - offset.x;
+  const y = e.offsetY / scale - offset.y;
+
+  const index = waypoints.findIndex(
+    wp => Math.hypot(wp.x - x, wp.y - y) < 10
+  );
+
+  if (index !== -1) {
+    waypoints.splice(index, 1);
+
+    if (currentWP > index) currentWP--;
+    if (currentWP < 1) currentWP = 1;
+  }
+};
+
+// LEFT-CLICK ADD WAYPOINT
+canvas.onclick = e => {
+  if (draggingWP || panning) return;
+
+  waypoints.push({
+    x: e.offsetX / scale - offset.x,
+    y: e.offsetY / scale - offset.y
+  });
+};
+
+// ZOOM
+canvas.onwheel = e => {
+  scale += e.deltaY * -0.001;
+  scale = Math.min(Math.max(0.5, scale), 2);
+};
+
+loop();
+</script>
+
+</body>
+</html>
+
